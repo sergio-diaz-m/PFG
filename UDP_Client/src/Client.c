@@ -32,31 +32,32 @@ int main (int argc, char* argv[]) {
 	// Send messages through the socket
 	struct sockaddr_in server;
 	server.sin_family 	= AF_INET;
-	server.sin_port	= htons(65500); // definido el puerto en el fichero /etc/services, tal como en el servidor
+	server.sin_port	= htons(35000); // definido el puerto en el fichero /etc/services, tal como en el servidor
 
 	// Se puede hacer de dos formas
 	// 1.
-		inet_aton("192.168.1.1", &server.sin_addr.s_addr); // con esto pasas directamente el valor a la struct (control de errores)
+		inet_aton("192.168.250.20", &server.sin_addr.s_addr); // con esto pasas directamente el valor a la struct (control de errores)
 		// la IP se puede obtener del fichero /etc/hosts mediante la funcion gethostyname("nombre");
 	// 2.
 		// dir.sin_addr.s_addr = inet_addr("<INSERTAR AQUÍ LA IP>");
 	// La mejor forma es la primera para el control de errores
 
-	char msg [] = "Hello World!";
+	char msg [200];
 
+	for(int i = 0; i < 200; i++){
+		msg[i]= 'A';
+	    }
 
-	sendto(sd, (const char *) msg, strlen(msg), 0, (struct sockaddr *) &server, sizeof(server));
-	printf("Hello message sent. \n");
+	sendto(sd, (const char *)msg, sizeof(msg), 0, (struct sockaddr *)&server, sizeof(server));
+	printf("Sent: %s\n", msg);
 
 	// Receiving the confirm message
 	int length, size;
-	char buffer [1024];
+	char buffer[4096];
 
-	size = recvfrom(sd, (char *) buffer, 1024, 0, (struct sockaddr *) &server, &length);
-	buffer[size] = '\0';
-	printf("Server: %s\n", buffer);
-
-	close(sd);
+	size = recvfrom(sd, (char *)buffer, sizeof(buffer), 0, (struct sockaddr *)&server, &length);
+	printf("Received %d bytes from the server.\n", size);
+	printf("Received %s \n", buffer);
 
 	return 0;
 }
