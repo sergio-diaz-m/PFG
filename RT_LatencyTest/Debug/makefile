@@ -42,7 +42,7 @@ main-build: RT_LatencyTest
 RT_LatencyTest: $(OBJS) $(USER_OBJS) makefile objects.mk $(OPTIONAL_TOOL_DEPS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: Cross GCC Linker'
-	arm-buildroot-linux-gnueabihf-gcc -L/home/ubuntu/Desktop/buildroot-2023.08.1/output/host/usr/lib -L/home/ubuntu/Desktop/buildroot-2023.08.1/output/host/usr/arm-buildroot-linux-gnueabihf -o "RT_LatencyTest" $(OBJS) $(USER_OBJS) $(LIBS)
+	arm-buildroot-linux-gnueabihf-gcc -L/home/ubuntu/Desktop/buildroot-2023.08.1/output/host/usr/lib -L/home/ubuntu/Desktop/buildroot-2023.08.1/output/host/usr/arm-buildroot-linux-gnueabihf/lib -o "RT_LatencyTest" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
