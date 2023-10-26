@@ -7,7 +7,7 @@
  * POSIX Real Time Cyclic task
  * using various pthread as RT threads
  */
-
+//Includes
 //Threads, scheduling, memory stuff
 #include <limits.h>
 #include <pthread.h>
@@ -15,54 +15,62 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
-//inet stuff
+	//inet stuff
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <string.h>
+
+//Defines
 #define CYCLE_PERIOD_MS 100  // Cyclic task period in ms
+#define BUFFER_SIZE 25
 
-//ONE TIME TASK
-int sd; // socket descriptor
-struct sockaddr_in server;
+// Circular buffer for data stream
+float circularBuffer[BUFFER_SIZE] = {0};
+int currentIndex = 0; // Index for the current element
 
+void updateBuffer(float value) {
+    circularBuffer[currentIndex] = value;
+    currentIndex = (currentIndex + 1) % BUFFER_SIZE; // Wrap around if needed
+}
+float calculateMean() {
+    float sum = 0;
+    for (int i = 0; i < BUFFER_SIZE; i++) {
+        sum += circularBuffer[i];
+    }
+    return sum / BUFFER_SIZE;
+}
 //CYCIC TASK TO BE DONE
 void* cyclicTask (void* arg){
 	struct timespec nextCycle, t1, t1_ans;
+	struct sockaddr_in server;
 	char msg [200];
+	int sd; // socket descriptor
 	int latency;
 	int length, size;
 	char buffer[4096];
+	int mean;
+
+	//Preliminary task
 	clock_gettime(CLOCK_MONOTONIC,&nextCycle);
 	//Since no more thereads will be made or terminated pid is only checked once.
 	pid_t tid = getpid();
 
-	//
-
 	sd = socket (AF_INET, SOCK_DGRAM, 0); // el 0 indica que el programa decide el protocolo que quiere utilizar
-
-
-	// Associate socket-port
-	// Edited /etc/services to include the service that we're creating (helloworld 65500/udp)
 	struct sockaddr_in dir;
 	dir.sin_family 	= AF_INET;
 	dir.sin_port	= 0; // El OS elige el puerto libre que quiera
 	dir.sin_addr.s_addr = INADDR_ANY; /* dirección IP del cliente que atender */
-
-
 	bind (sd, (struct sockaddr *) &dir, sizeof(dir)); // el cast de sockaddr_in a sockaddr se tiene que hacer
-
-
 	// Send messages through the socket
-
 	server.sin_family 	= AF_INET;
 	server.sin_port	= htons(35000); //Server port
 	inet_aton("192.168.250.20", &server.sin_addr.s_addr); //Server address
 
-	//
+
 	while(1){
 		//Next cycle start calculation
-		printf("Cyclic task (PID: %d): Time: %ld s. Latency: %d ns\r", tid,nextCycle.tv_sec,latency);
+		printf("Cyclic task (PID: %d): T:%ld s. Lat:%d ns. Avg:%d ns. \r", tid,nextCycle.tv_sec,latency,mean);
 
         // Calculate the start time of the next cycle
         nextCycle.tv_nsec += CYCLE_PERIOD_MS * 1000000;  // Convert ms to ns
@@ -85,6 +93,8 @@ void* cyclicTask (void* arg){
     	size = recvfrom(sd, (char *)buffer, sizeof(buffer), 0, (struct sockaddr *)&server, &length);
     	clock_gettime(CLOCK_MONOTONIC,&t1_ans);
     	latency=t1_ans.tv_nsec-t1.tv_nsec;
+    	updateBuffer(latency);
+    	mean = calculateMean();
     	//printf("Received %d bytes from the server.\n", size);
     	//printf("Received %s \n", buffer);
 		//Wait for the next cycle
