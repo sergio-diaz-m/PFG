@@ -29,6 +29,7 @@
 float circularBuffer[BUFFER_SIZE] = {0};
 int currentIndex = 0; // Index for the current element
 
+
 void updateBuffer(float value) {
     circularBuffer[currentIndex] = value;
     currentIndex = (currentIndex + 1) % BUFFER_SIZE; // Wrap around if needed
@@ -51,6 +52,13 @@ void* cyclicTask (void* arg){
 	char buffer[4096];
 	int mean;
 
+	// Open a file for writing
+	FILE *file = fopen("latency.txt", "w");
+
+	if (file == NULL) {
+	    perror("Error opening file");
+	    return 1;
+	}
 	//Preliminary task
 	clock_gettime(CLOCK_MONOTONIC,&nextCycle);
 	//Since no more thereads will be made or terminated pid is only checked once.
@@ -68,10 +76,10 @@ void* cyclicTask (void* arg){
 	inet_aton("192.168.250.20", &server.sin_addr.s_addr); //Server address
 
 
+
 	while(1){
 		//Next cycle start calculation
 		printf("Cyclic task (PID: %d): T:%ld s. Lat:%d ns. Avg:%d ns. \r", tid,nextCycle.tv_sec,latency,mean);
-
         // Calculate the start time of the next cycle
         nextCycle.tv_nsec += CYCLE_PERIOD_MS * 1000000;  // Convert ms to ns
         while (nextCycle.tv_nsec >= 1000000000) {
@@ -94,15 +102,19 @@ void* cyclicTask (void* arg){
     	clock_gettime(CLOCK_MONOTONIC,&t1_ans);
     	latency=t1_ans.tv_nsec-t1.tv_nsec;
     	updateBuffer(latency);
-    	mean = calculateMean();
+    	fprintf(file, "%d ",t1_ans.tv_sec);
+    	fprintf(file, "%d\n",latency);
+    	//mean = calculateMean();
     	//printf("Received %d bytes from the server.\n", size);
     	//printf("Received %s \n", buffer);
 		//Wait for the next cycle
     	//printf("Latency: %d ns. \r", latency);
+
     	fflush (stdout);
+
 		clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&nextCycle,NULL);
 	}//loop end
-
+	fclose(file);
 	return NULL;
 }
 
