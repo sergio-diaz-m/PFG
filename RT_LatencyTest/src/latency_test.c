@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <stdio.h>
+#include <sys/time.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 	//inet stuff
@@ -43,14 +44,14 @@ float calculateMean() {
 }
 //CYCIC TASK TO BE DONE
 void* cyclicTask (void* arg){
-	struct timespec nextCycle, t1, t1_ans;
+	struct timespec nextCycle, startTime, currentTime;
 	struct sockaddr_in server;
 	char msg [200];
 	int sd; // socket descriptor
 	int latency;
 	int length, size;
 	char buffer[4096];
-	int mean;
+	int time;
 
 	// Open a file for writing
 	FILE *file = fopen("latency.txt", "w");
@@ -79,7 +80,7 @@ void* cyclicTask (void* arg){
 
 	while(1){
 		//Next cycle start calculation
-		printf("Cyclic task (PID: %d): T:%ld s. Lat:%d ns. Avg:%d ns. \r", tid,nextCycle.tv_sec,latency,mean);
+		printf("Cyclic task (PID: %d): T:%ld s. Lat:%d us.\r", tid,nextCycle.tv_sec,latency);
         // Calculate the start time of the next cycle
         nextCycle.tv_nsec += CYCLE_PERIOD_MS * 1000000;  // Convert ms to ns
         while (nextCycle.tv_nsec >= 1000000000) {
@@ -94,21 +95,15 @@ void* cyclicTask (void* arg){
     	    }
 
     	sendto(sd, (const char *)msg, sizeof(msg), 0, (struct sockaddr *)&server, sizeof(server));
-    	//printf("Sent: %d bytes\n", sizeof(msg));
-//    	t1= clock_gettime(CLOCK_MONOTONIC,&nextCycle);
-    	clock_gettime(CLOCK_MONOTONIC,&t1);
+    	clock_gettime(CLOCK_MONOTONIC,&startTime);
     	// Receiving the confirm message
     	size = recvfrom(sd, (char *)buffer, sizeof(buffer), 0, (struct sockaddr *)&server, &length);
-    	clock_gettime(CLOCK_MONOTONIC,&t1_ans);
-    	latency=t1_ans.tv_nsec-t1.tv_nsec;
-    	updateBuffer(latency);
-    	fprintf(file, "%d ",t1_ans.tv_sec);
+    	clock_gettime(CLOCK_MONOTONIC,&currentTime);
+    	//Get time and latency
+    	latency=(currentTime.tv_nsec-startTime.tv_nsec)/1000; //microseconds
+    	time=nextCycle.tv_nsec/1000+nextCycle.tv_sec*1000000; //time in nsec to be displayed.
+    	fprintf(file, "%d ",time);
     	fprintf(file, "%d\n",latency);
-    	//mean = calculateMean();
-    	//printf("Received %d bytes from the server.\n", size);
-    	//printf("Received %s \n", buffer);
-		//Wait for the next cycle
-    	//printf("Latency: %d ns. \r", latency);
 
     	fflush (stdout);
 

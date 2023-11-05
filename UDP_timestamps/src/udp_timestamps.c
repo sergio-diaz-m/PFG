@@ -97,7 +97,7 @@ void* cyclicTask(void* arg) {
 
         printf("Latency: %d microseconds, Time Elapsed: %d microseconds\n", latency, timeElapsed);
 
-        fprintf(file, "Time Elapsed: %d microseconds, Latency: %d microseconds\n", timeElapsed, latency);
+        fprintf(file, "%d %d\n", timeElapsed, latency);
 
         // Sleep for the rest of the cycle period
         fflush(file);
