@@ -1,5 +1,0 @@
-Para crosscompilar 
-
-make CROSS_COMPILE=/home/ubuntu/Desktop/buildroot-2023.08.1/output/host/usr/bin/arm-buildroot-linux-gnueabihf-
-
-hizo falta instalar las librerias de numa (?)
