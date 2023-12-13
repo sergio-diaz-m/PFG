@@ -47,7 +47,7 @@ void* udpTask(void* arg) {
 
     int sd;
     struct sockaddr_in server;
-    char msg[200];
+    char byteframe[200];
     int latency;
 
     sd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -60,44 +60,48 @@ void* udpTask(void* arg) {
     // Enable the SO_TIMESTAMP option for the socket
     int timestampOption = 1;
     setsockopt(sd, SOL_SOCKET, SO_TIMESTAMP, &timestampOption, sizeof(timestampOption));
+    int optval=7; // valid values are in the range [1,7]  1- low priority, 7 - high priority
+    setsockopt(sd, SOL_SOCKET, SO_PRIORITY, &optval, sizeof(optval));
 
     server.sin_family = AF_INET;
     server.sin_port = htons(35000); // Server port
     inet_aton("192.168.250.20", &server.sin_addr.s_addr); // Server address
 
     struct timeval startTime, currentTime;
+    struct timeval sendTime, receiveTime;
     gettimeofday(&startTime, NULL);
 
-    while (!exit_flag) {
-        for (int i = 0; i < 200; i++) {
-            msg[i] = 'A';
-        }
+    // Receive the confirmation message along with the timestamp
+    struct msghdr msg;
+    struct iovec iov;
+    char buffer[400];
+    int size;
+    int length;
 
-        struct timeval sendTime, receiveTime;
+    iov.iov_base = buffer;
+    iov.iov_len = sizeof(buffer);
+    msg.msg_name = &server;
+    msg.msg_namelen = sizeof(server);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    // Set up a control message to receive the timestamp
+    char control[CMSG_SPACE(sizeof(struct timeval))];
+    msg.msg_control = control;
+    msg.msg_controllen = sizeof(control);
+
+	//Prepare 200 bytes to send
+    for (int i = 0; i < 200; i++) {
+    	byteframe[i] = 'A';
+    }
+
+
+    while (!exit_flag) {
 
         // Record the send time
         gettimeofday(&sendTime, NULL);
-
-        sendto(sd, (const char*)msg, sizeof(msg), 0, (struct sockaddr*)&server, sizeof(server));
-
-        // Receive the confirmation message along with the timestamp
-        struct msghdr msg;
-        struct iovec iov;
-        char buffer[4096];
-        int size;
-        int length;
-
-        iov.iov_base = buffer;
-        iov.iov_len = sizeof(buffer);
-        msg.msg_name = &server;
-        msg.msg_namelen = sizeof(server);
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-
-        // Set up a control message to receive the timestamp
-        char control[CMSG_SPACE(sizeof(struct timeval))];
-        msg.msg_control = control;
-        msg.msg_controllen = sizeof(control);
+        // Send 200  bytes
+        sendto(sd, (const char*)byteframe, sizeof(byteframe), 0, (struct sockaddr*)&server, sizeof(server));
 
         size = recvmsg(sd, &msg, 0);
 
@@ -154,9 +158,6 @@ void* rtcTask(void* arg){
 	extern int i2cFile;
 	i2cFile = openI2C();
     setupRTC();
-    // Set the date and time
-    //setDateTime(bin2bcd(23), bin2bcd(11), bin2bcd(21), bin2bcd(14), bin2bcd(00), 0);
-    // Read and print the current date and time
     while(!exit_flag){
     readDateTime();
     usleep(1000000);
@@ -219,12 +220,12 @@ int main(int argc, char* argv[]) {
         printf("pthread setinheritsched failed\n");
         goto out;
     }
-    // Create threads
-//    ret = pthread_create(&udp_task, &attr, udpTask, NULL);
-//    if (ret) {
-//        printf("create udp task pthread failed\n");
-//        goto out;
-//    }
+   //Create threads
+    ret = pthread_create(&udp_task, &attr, udpTask, NULL);
+    if (ret) {
+        printf("create udp task pthread failed\n");
+        goto out;
+    }
 
     ret = pthread_create(&gpio_task, &attr, gpioTask, NULL);
     if (ret) {
@@ -243,11 +244,11 @@ int main(int argc, char* argv[]) {
         sched_yield();
     }
 
-    // Join threads
-//    ret = pthread_join(udp_task, NULL);
-//    if (ret) {
-//        printf("join udp pthread failed: %m\n");
-//    }
+    //Wait for threads to finish
+    ret = pthread_join(udp_task, NULL);
+    if (ret) {
+        printf("join udp pthread failed: %m\n");
+    }
 
     ret = pthread_join(gpio_task, NULL);
     if (ret) {
