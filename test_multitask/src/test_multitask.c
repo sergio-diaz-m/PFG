@@ -3,6 +3,12 @@
  *
  *  Created on: Nov 21, 2023
  *      Author: ubuntu
+ *
+ *  Measuring RTT time in UDP communications with in a reak-time task.
+ *  RTT latency measured used with software timestamps. (seems more complicated and the efficiency seems similar)
+ *  Tasks running in real time in different pthreads.
+ *  Task1: GPIO toggle
+ *  Task2: Get time from a RTC I2C module.
  */
 
 #include <stdio.h>
@@ -42,7 +48,6 @@ void* udpTask(void* arg) {
 
     if (file == NULL) {
         perror("Error opening file");
-        return 1;
     }
 
     int sd;
@@ -55,7 +60,6 @@ void* udpTask(void* arg) {
     dir.sin_family = AF_INET;
     dir.sin_port = 0;
     dir.sin_addr.s_addr = INADDR_ANY;
-    bind(sd, (struct sockaddr*)&dir, sizeof(dir));
 
     // Enable the SO_TIMESTAMP option for the socket
     int timestampOption = 1;
@@ -123,13 +127,13 @@ void* udpTask(void* arg) {
         timersub(&currentTime, &startTime, &currentTime);
         int timeElapsed = currentTime.tv_sec * 1000000 + currentTime.tv_usec;
 
-        printf("Latency: %d microseconds, Time Elapsed: %d microseconds\n", latency, timeElapsed);
+        //printf("Latency: %d microseconds, Time Elapsed: %d microseconds\n", latency, timeElapsed);
 
         fprintf(file, "%d %d\n", timeElapsed, latency);
 
         // Sleep for the rest of the cycle period
         fflush(file);
-        usleep(CYCLE_PERIOD_MS * 1000);
+
         sched_yield();
     }
     printf("Terminating UDP thread.\n");
@@ -139,33 +143,33 @@ void* udpTask(void* arg) {
     return NULL;
 }
 void* gpioTask(void *arg){
-	gpio_export("21");
-	gpio_set("21","out");
-	while(!exit_flag){
-		gpio_write("21","1");
-		usleep(10000);
-		gpio_write("21","0");
-		usleep(10000);
-		sched_yield();
-	}
-	printf("Terminating GPIO thread.\n");
-	gpio_unexport("21");
-	pthread_exit(NULL);
+//	gpio_export("21");
+//	gpio_set("21","out");
+//	while(!exit_flag){
+//		gpio_write("21","1");
+//		usleep(10000);
+//		gpio_write("21","0");
+//		usleep(10000);
+//		sched_yield();
+//	}
+//	printf("Terminating GPIO thread.\n");
+//	gpio_unexport("21");
+//	pthread_exit(NULL);
     return 0;
 
 }
 void* rtcTask(void* arg){
-	extern int i2cFile;
-	i2cFile = openI2C();
-    setupRTC();
-    while(!exit_flag){
-    readDateTime();
-    usleep(1000000);
-    sched_yield();
-    }
-    printf("Terminating RTC thread.\n");
-    close(i2cFile);
-    pthread_exit(NULL);
+//	extern int i2cFile;
+//	i2cFile = openI2C();
+//    setupRTC();
+//    while(!exit_flag){
+//    readDateTime();
+//    usleep(1000000);
+//    sched_yield();
+//    }
+//    printf("Terminating RTC thread.\n");
+//    close(i2cFile);
+//    pthread_exit(NULL);
     return 0;
 }
 // Main
@@ -207,7 +211,7 @@ int main(int argc, char* argv[]) {
         printf("pthread setschedpolicy failed\n");
         goto out;
     }
-    param.sched_priority = 80;
+    param.sched_priority = 90;
     ret = pthread_attr_setschedparam(&attr, &param);
     if (ret) {
         printf("pthread setschedparam failed\n");
@@ -226,7 +230,12 @@ int main(int argc, char* argv[]) {
         printf("create udp task pthread failed\n");
         goto out;
     }
-
+    param.sched_priority = 20;
+    ret = pthread_attr_setschedparam(&attr, &param);
+    if (ret) {
+        printf("pthread setschedparam failed\n");
+        goto out;
+    }
     ret = pthread_create(&gpio_task, &attr, gpioTask, NULL);
     if (ret) {
         printf("create gpio task pthread failed\n");

@@ -1,3 +1,12 @@
+/*
+ * rttUDP.c
+ *  Implements latency measuring tools for UDP communications using
+ *  clock_gettime and SO_TIMESTAMPING as software time stamping methods
+ *  to obtain round trip time (RTT) in real-time.
+ *  Created on: Oct 26, 2023
+ *      Author: Sergio Diaz
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -56,6 +65,19 @@ static void wait_rest_of_period(struct period_info *pinfo)
         /* for simplicity, ignoring possibilities of signal wakes */
         clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &pinfo->next_period, NULL);
 }
+static void usage(const char* error){
+	if (error)
+		printf("invalid option: %s\n", error);
+	printf("UDPrtt v1.0 -p -n [option]*\n\n"
+		   "-p: task priority (Real-time: 80+)\n"
+		   "-n: number of packages to send (0 for unlimited)\n"
+		   "-t: send task period in ms (0 no sleep time)\n"
+	       "Options:\n"
+	       "  SO_TIMESTAMPING - request kernel space software time stamps to calculate latency\n"
+	       "  CLOCK_GETTIME - request user space time stamps using clock_gettime() to calculate latency \n"
+	       "  ALL - request both time stamp reporting methods and calculate latency\n");
+	exit(1);
+}
 
 void* cyclicTask(void* arg) {
 
@@ -80,7 +102,7 @@ void* cyclicTask(void* arg) {
     dir.sin_addr.s_addr = inet_addr("192.168.250.20");
 
     //Set socket options
-    int priority=7;// valid values are in the range [1,7 ]1- low priority, 7 - high priority
+    int priority=7; //priority range [1,7] 1- lowest, 7- highest.
     if (setsockopt(sd, SOL_SOCKET, SO_PRIORITY, &priority, sizeof(priority))  < 0) {
            perror("Failed to set SO_PRIORITY");
            exit(EXIT_FAILURE);
@@ -253,3 +275,4 @@ int main(int argc, char* argv[]) {
 out:
     return ret;
 }
+

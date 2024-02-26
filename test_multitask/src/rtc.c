@@ -96,5 +96,5 @@ void readDateTime() {
     uint8_t month = bcd2bin(readRegister(DS1307_MONTH_REG));
     uint8_t year = bcd2bin(readRegister(DS1307_YEAR_REG));
 
-    printf("Date and Time: 20%02d-%02d-%02d %02d:%02d:%02d\n", year, month, date, hours, minutes, seconds);
+    //printf("Date and Time: 20%02d-%02d-%02d %02d:%02d:%02d\n", year, month, date, hours, minutes, seconds);
 }

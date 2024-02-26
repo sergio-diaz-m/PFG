@@ -4,8 +4,8 @@
  *  Created on: Oct 24, 2023
  *      Author: ubuntu
  *
- * POSIX Real Time Cyclic task
- * using various pthread as RT threads
+ * Measuring RTT time for an UDP communication using clock_gettime
+ *
  */
 //Includes
 //Threads, scheduling, memory stuff
@@ -24,37 +24,20 @@
 
 //Defines
 #define CYCLE_PERIOD_MS 100  // Cyclic task period in ms
-#define BUFFER_SIZE 25
-
-// Circular buffer for data stream
-float circularBuffer[BUFFER_SIZE] = {0};
-int currentIndex = 0; // Index for the current element
 
 
-void updateBuffer(float value) {
-    circularBuffer[currentIndex] = value;
-    currentIndex = (currentIndex + 1) % BUFFER_SIZE; // Wrap around if needed
-}
-float calculateMean() {
-    float sum = 0;
-    for (int i = 0; i < BUFFER_SIZE; i++) {
-        sum += circularBuffer[i];
-    }
-    return sum / BUFFER_SIZE;
-}
 //CYCIC TASK TO BE DONE
 void* cyclicTask (void* arg){
 	struct timespec nextCycle, startTime, currentTime;
 	struct sockaddr_in server;
 	char msg [200];
-	int sd; // socket descriptor
 	int latency;
 	int length, size;
 	char buffer[4096];
 	int time;
 
 	// Open a file for writing
-	FILE *file = fopen("latency.txt", "w");
+	FILE *file = fopen("ts_lat.txt", "w");
 
 	if (file == NULL) {
 	    perror("Error opening file");
@@ -65,49 +48,44 @@ void* cyclicTask (void* arg){
 	//Since no more thereads will be made or terminated pid is only checked once.
 	pid_t tid = getpid();
 
-	sd = socket (AF_INET, SOCK_DGRAM, 0); // el 0 indica que el programa decide el protocolo que quiere utilizar
+	int sd = socket (AF_INET, SOCK_DGRAM, 0); // sd, socket descriptor, el 0 indica que el programa decide el protocolo que quiere utilizar
 	struct sockaddr_in dir;
 	dir.sin_family 	= AF_INET;
-	dir.sin_port	= 0; // El OS elige el puerto libre que quiera
-	dir.sin_addr.s_addr = INADDR_ANY; /* dirección IP del cliente que atender */
-	bind (sd, (struct sockaddr *) &dir, sizeof(dir)); // el cast de sockaddr_in a sockaddr se tiene que hacer
+	dir.sin_port	= htons(35000); // El OS elige el puerto libre que quiera
+	dir.sin_addr.s_addr = inet_addr("192.168.250.20"); /* dirección IP del cliente que atender */
 	// Send messages through the socket
-	server.sin_family 	= AF_INET;
-	server.sin_port	= htons(35000); //Server port
-	inet_aton("192.168.250.20", &server.sin_addr.s_addr); //Server address
+    int optval=7; // valid values are in the range [1,7]  1- low priority, 7 - high priority
+    setsockopt(sd, SOL_SOCKET, 7, &optval, sizeof(optval));
 
+	for(int i = 0; i < 200; i++){
+		msg[i]= 'A';
+	    }
 
-
+	int num_packages=0;
 	while(1){
 		//Next cycle start calculation
 		printf("Cyclic task (PID: %d): T:%ld s. Lat:%d us.\r", tid,nextCycle.tv_sec,latency);
         // Calculate the start time of the next cycle
-        nextCycle.tv_nsec += CYCLE_PERIOD_MS * 1000000;  // Convert ms to ns
-        while (nextCycle.tv_nsec >= 1000000000) {
-            nextCycle.tv_nsec -= 1000000000;
-            nextCycle.tv_sec++;
-        }
+//        nextCycle.tv_nsec += CYCLE_PERIOD_MS * 1000000;  // Convert ms to ns
+//        while (nextCycle.tv_nsec >= 1000000000) {
+//            nextCycle.tv_nsec -= 1000000000;
+//            nextCycle.tv_sec++;
+//        }
+		clock_gettime(CLOCK_MONOTONIC,&startTime);
+    	if (sendto(sd, (const char *)msg, sizeof(msg), 0 , (struct sockaddr*)&dir, sizeof(dir))<0){
+            printf("Unable to send message\n");
+    	}
 
-
-
-    	for(int i = 0; i < 200; i++){
-    		msg[i]= 'A';
-    	    }
-
-    	sendto(sd, (const char *)msg, sizeof(msg), 0, (struct sockaddr *)&server, sizeof(server));
-    	clock_gettime(CLOCK_MONOTONIC,&startTime);
     	// Receiving the confirm message
-    	size = recvfrom(sd, (char *)buffer, sizeof(buffer), 0, (struct sockaddr *)&server, &length);
+    	recvfrom(sd, (char *)buffer, sizeof(buffer), 0 , (struct sockaddr *)&dir, sizeof(dir));
     	clock_gettime(CLOCK_MONOTONIC,&currentTime);
     	//Get time and latency
     	latency=(currentTime.tv_nsec-startTime.tv_nsec)/1000; //microseconds
-    	time=nextCycle.tv_nsec/1000+nextCycle.tv_sec*1000000; //time in nsec to be displayed.
-    	fprintf(file, "%d ",time);
+    	time=currentTime.tv_nsec; //time in nsec to be displayed.
     	fprintf(file, "%d\n",latency);
 
     	fflush (stdout);
-
-		clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&nextCycle,NULL);
+		//clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&nextCycle,NULL);
 	}//loop end
 	fclose(file);
 	return NULL;
@@ -117,7 +95,6 @@ int main(int argc, char* argv[])
 {
         struct sched_param param;
         pthread_attr_t attr;
-        pthread_t ot_thread;
         pthread_t cyclic_thread;
         int ret;
 
