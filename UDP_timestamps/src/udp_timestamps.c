@@ -28,15 +28,14 @@
 
 #define CYCLE_PERIOD_US 1000
 #define BUFFER_SIZE 25
-#define PERIOD_NS 10000
+#define PERIOD_NS 10000000
 
 struct timespec timespec_sub(const struct timespec *time1,
     const struct timespec *time0) {
-  struct timespec diff = {.tv_sec = time1->tv_sec - time0->tv_sec, //
+  struct timespec diff = {
       .tv_nsec = time1->tv_nsec - time0->tv_nsec};
   if (diff.tv_nsec < 0) {
     diff.tv_nsec += 1000000000; // nsec/sec
-    diff.tv_sec--;
   }
   return diff;
 }
@@ -49,7 +48,7 @@ static void periodic_task_init(struct period_info *pinfo)
         /* for simplicity, hardcoding a 1ms period */
         pinfo->period_ns = PERIOD_NS;
 
-        clock_gettime(CLOCK_MONOTONIC, &(pinfo->next_period));
+        clock_gettime(CLOCK_REALTIME, &(pinfo->next_period));
 }
 static void inc_period(struct period_info *pinfo)
 {
@@ -66,11 +65,11 @@ static void wait_rest_of_period(struct period_info *pinfo)
         inc_period(pinfo);
 
         /* for simplicity, ignoring possibilities of signal wakes */
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &pinfo->next_period, NULL);
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &pinfo->next_period, NULL);
 }
 
 void* cyclicTask(void* arg) {
-	int pfd=0;
+
 	//Set task period
 	struct period_info pinfo;
     periodic_task_init(&pinfo);
@@ -101,13 +100,14 @@ void* cyclicTask(void* arg) {
     // Enable SO_TIMESTAMPING to generate tx and rx timestamps
     int enable =
     SOF_TIMESTAMPING_RX_SOFTWARE|SOF_TIMESTAMPING_TX_SOFTWARE
-	|SOF_TIMESTAMPING_SOFTWARE;
+	|SOF_TIMESTAMPING_SOFTWARE|SOF_TIMESTAMPING_OPT_TSONLY;;
     if (setsockopt(sd, SOL_SOCKET, SO_TIMESTAMPING, &enable, sizeof(enable)) < 0) {
         perror("Failed to enable SO_TIMESTAMPING");
         exit(EXIT_FAILURE);
     }
     int on =1;
-    setsockopt(sd, SOL_SOCKET, SO_SELECT_ERR_QUEUE, &on, sizeof(on));
+    //setsockopt(sd, SOL_SOCKET, SO_SELECT_ERR_QUEUE, &on, sizeof(on));
+    setsockopt(sd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
     // Prepare 200 bytes data to be sent
     for (int i = 0; i < 200; i++) {
           data[i] = 'A';
@@ -127,9 +127,6 @@ void* cyclicTask(void* arg) {
     message.msg_iov = iov;
     message.msg_iovlen = 1;
 
-    struct pollfd pollfd[1];
-    pollfd[0].fd = sd;
-    pollfd[0].events = POLLIN;
     // Main loop
     while (1) {
     	//Maybe all of this settings can go out of the loop!!
@@ -139,7 +136,8 @@ void* cyclicTask(void* arg) {
 
 
         struct iovec iov_rx;
-        struct timespec rx_timestamp, tx_timestamp, latency;
+        struct timespec rx_time,tx_time,rx_timestamp, tx_timestamp;
+        struct timespec lat_ts, lat_time;
         struct cmsghdr *cmsg;
         struct cmsghdr *cmsg_rx;
 
@@ -168,31 +166,27 @@ void* cyclicTask(void* arg) {
         // Send message
         memset(data, 'A', sizeof(data));
         //sendmsg(sd, &message, 0);
+        clock_gettime(CLOCK_MONOTONIC,&tx_time);
     	if (sendto(sd, (const char *)data, sizeof(data), 0, (struct sockaddr*)&dir, sizeof(dir))<0){
            printf("Unable to send message\n");
     	}
         // Receive packet with payload data including timestamp from the given address
         //recvfrom(sd, (char *)buffer, sizeof(buffer), MSG_WAITALL , (struct sockaddr *)&dir, sizeof(dir));
-    	recvmsg(sd, &msg_rx, MSG_WAITALL);
+    	recvmsg(sd, &msg_rx, 0);
+    	clock_gettime(CLOCK_MONOTONIC,&rx_time);
+
         int ret = recvmsg(sd, &msg_tx, MSG_ERRQUEUE);
         if (ret == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // No data available right now, wait and try again
-                usleep(10000); // Sleep for 10 milliseconds
-                continue;
-            } else {
                 perror("recvmsg");
                 break;
-            }
         }
+
 
         // Extract the timestamp from ancillary data using iterator macros
          for (cmsg = CMSG_FIRSTHDR(&msg_tx); cmsg; cmsg = CMSG_NXTHDR(&msg_tx, cmsg)) {
               if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SO_TIMESTAMPING) {
                   struct scm_timestamping *t = (void*)CMSG_DATA(cmsg);
                   tx_timestamp = t->ts[0];
-
-
                   break;
               }
           }
@@ -200,18 +194,19 @@ void* cyclicTask(void* arg) {
               if (cmsg_rx->cmsg_level == SOL_SOCKET && cmsg_rx->cmsg_type == SCM_TIMESTAMPING) {
                   struct scm_timestamping *t = (void*)CMSG_DATA(cmsg_rx);
                   rx_timestamp = t->ts[0];
-
                   break;
               }
           }
 
-         latency=timespec_sub(&rx_timestamp,&tx_timestamp);
+         lat_ts=timespec_sub(&rx_timestamp,&tx_timestamp);
+         lat_time=timespec_sub(&rx_time,&tx_time);
+
         // Calculate and print the latency
 
         //printf("TX_ts %ld.%ld\n",tx_timestamp.tv_sec,tx_timestamp.tv_nsec);
         //printf("RX_ts %ld.%ld\n",rx_timestamp.tv_sec,rx_timestamp.tv_nsec);
-        printf("Cyclic task (PID: %d): Lat:%d us.\r", tid,((int)latency.tv_nsec)/1000);
-        fprintf(file, "%d\n",(int)latency.tv_nsec/1000);
+        printf("(PID: %d): Lat:%lu us. %lu\n", tid,lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
+        fprintf(file, "%lu %lu\n",lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
         fflush(file);
 
         //Sleep
