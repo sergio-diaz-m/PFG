@@ -1,14 +1,7 @@
-/*
- * rttUDP.c
- *  Implements latency measuring tools for UDP communications using
- *  clock_gettime and SO_TIMESTAMPING as software time stamping methods
- *  to obtain round trip time (RTT) in real-time.
- *  Created on: Oct 26, 2023
- *      Author: Sergio Diaz
- */
-
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/mman.h>
@@ -65,18 +58,20 @@ static void wait_rest_of_period(struct period_info *pinfo)
         /* for simplicity, ignoring possibilities of signal wakes */
         clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &pinfo->next_period, NULL);
 }
-static void usage(const char* error){
-	if (error)
-		printf("invalid option: %s\n", error);
-	printf("UDPrtt v1.0 -p -n [option]*\n\n"
+
+static void usage(void){
+	printf("\nrttUDP v1.0 round-trip time UDP tester\n"
+		   "Usage: rttUDP -p -n [option]*\n"
 		   "-p: task priority (Real-time: 80+)\n"
 		   "-n: number of packages to send (0 for unlimited)\n"
 		   "-t: send task period in ms (0 no sleep time)\n"
 	       "Options:\n"
-	       "  SO_TIMESTAMPING - request kernel space software time stamps to calculate latency\n"
-	       "  CLOCK_GETTIME - request user space time stamps using clock_gettime() to calculate latency \n"
+	       "  SO_TIMESTAMPING - request kernel space software\n"
+	       "time stamps to calculate latency\n"
+	       "  CLOCK_GETTIME - request user space\n"
+	       "time stamps using clock_gettime() to calculate latency \n"
 	       "  ALL - request both time stamp reporting methods and calculate latency\n");
-	exit(1);
+	exit(EXIT_FAILURE);
 }
 
 void* cyclicTask(void* arg) {
@@ -102,7 +97,7 @@ void* cyclicTask(void* arg) {
     dir.sin_addr.s_addr = inet_addr("192.168.250.20");
 
     //Set socket options
-    int priority=7; //priority range [1,7] 1- lowest, 7- highest.
+    int priority=7;// valid values are in the range [1,7 ]1- low priority, 7 - high priority
     if (setsockopt(sd, SOL_SOCKET, SO_PRIORITY, &priority, sizeof(priority))  < 0) {
            perror("Failed to set SO_PRIORITY");
            exit(EXIT_FAILURE);
@@ -124,48 +119,48 @@ void* cyclicTask(void* arg) {
           data[i] = 'A';
       }
 
+
     // Main loop
     while (1) {
     	char buffer[4096]; //quitar?
-    	static char ctrl[1024 /* overprovision*/];
-        struct msghdr msg_tx,msg_rx;
-        struct iovec entry;
-        struct iovec iov_rx;
-        struct timespec rx_time,tx_time,rx_timestamp, tx_timestamp;
-        struct timespec lat_ts, lat_time;
-        struct cmsghdr *cmsg;
-        struct cmsghdr *cmsg_rx;
+		static char ctrl[1024 /* overprovision*/];
+		struct msghdr msg_tx,msg_rx;
+		struct iovec entry;
+		struct iovec iov_rx;
+		struct timespec rx_time,tx_time,rx_timestamp, tx_timestamp;
+		struct timespec lat_ts, lat_time;
+		struct cmsghdr *cmsg;
+		struct cmsghdr *cmsg_rx;
 
-        // Message structure
-        memset(&msg_tx, 0, sizeof(msg_tx));
+		// Message structure
+		memset(&msg_tx, 0, sizeof(msg_tx));
 
-    	entry.iov_base = data;
-    	entry.iov_len = sizeof(data);
+		entry.iov_base = data;
+		entry.iov_len = sizeof(data);
 
-        msg_tx.msg_name = NULL; //address
-        msg_tx.msg_namelen = 0;//address size
-        msg_tx.msg_iov = &entry; //io vector array
-        msg_tx.msg_iovlen = 1; //iov length
-        msg_tx.msg_control = ctrl; //ancillary data
-        msg_tx.msg_controllen = sizeof(ctrl); //ancillary data lenght
+		msg_tx.msg_name = NULL; //address
+		msg_tx.msg_namelen = 0;//address size
+		msg_tx.msg_iov = &entry; //io vector array
+		msg_tx.msg_iovlen = 1; //iov length
+		msg_tx.msg_control = ctrl; //ancillary data
+		msg_tx.msg_controllen = sizeof(ctrl); //ancillary data lenght
 
-        memset(&msg_rx, 0, sizeof(msg_rx));
-        msg_rx.msg_name = &dir; //address
-        msg_rx.msg_namelen = sizeof(dir);//address size
-        msg_rx.msg_iov = &iov_rx; //io vector array
-        msg_rx.msg_iovlen = 1; //iov length
-        msg_rx.msg_control = buffer; //ancillary data
-        msg_rx.msg_controllen = sizeof(buffer); //ancillary data lenght
-
+		memset(&msg_rx, 0, sizeof(msg_rx));
+		msg_rx.msg_name = &dir; //address
+		msg_rx.msg_namelen = sizeof(dir);//address size
+		msg_rx.msg_iov = &iov_rx; //io vector array
+		msg_rx.msg_iovlen = 1; //iov length
+		msg_rx.msg_control = buffer; //ancillary data
+		msg_rx.msg_controllen = sizeof(buffer); //ancillary data lenght
 
         // Send 200 bytes
-        clock_gettime(CLOCK_MONOTONIC,&tx_time); //Get tx time in application space
+        clock_gettime(CLOCK_BOOTTIME ,&tx_time); //Get tx time in application space
     	if (sendto(sd, (const char *)data, sizeof(data), 0, (struct sockaddr*)&dir, sizeof(dir))<0){
-           printf("Unable to send message\n");
+           perror("sendto");
     	}
     	//Recive message with rx timestamp
-    	recvmsg(sd, &msg_rx, 0);
-    	clock_gettime(CLOCK_MONOTONIC,&rx_time); //Get rx time in application space
+    	recvmsg(sd, &msg_rx, MSG_DONTROUTE|MSG_NOSIGNAL|MSG_ZEROCOPY);
+    	clock_gettime(CLOCK_BOOTTIME ,&rx_time); //Get rx time in application space
     	//Recieve tx timestamp through MSG_ERRQUEUE
         int ret = recvmsg(sd, &msg_tx, MSG_ERRQUEUE);
         if (ret == -1) {
@@ -200,7 +195,7 @@ void* cyclicTask(void* arg) {
         //printf("TX_ts %ld.%ld\n",tx_timestamp.tv_sec,tx_timestamp.tv_nsec);
         //printf("RX_ts %ld.%ld\n",rx_timestamp.tv_sec,rx_timestamp.tv_nsec);
 
-        printf("(PID: %d): Lat:%lu us. %lu\n", tid,lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
+        printf("(PID: %d): Lat:%lu us. %lu\r", tid,lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
         fprintf(file, "%lu %lu\n",lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
         fflush(file);
 
@@ -219,6 +214,50 @@ int main(int argc, char* argv[]) {
     pthread_t cyclic_thread;
     int ret;
 
+    //Parse arguemnts
+    int option;
+    if(argc==1){
+    	printf("Invalid arguments.\nFor detailed help run: rttUDP -h\n");
+    	exit(-1);
+    }
+    // put ':' at the starting of the string so compiler can distinguish between '?' and ':'
+    while((option = getopt(argc, argv, ":p:n:t:h")) != -1){ //get option from the getopt() method
+       switch(option){
+          case 'h':
+        	 usage();
+        	 break;
+          case 'p': //Task priority (80+ for real time)
+             printf("Given priority: %d\n", atoi(optarg));
+             param.sched_priority = 90;
+             break;
+          case 'n': //Number of messages to send
+             printf("Packages to send: %d\n", atoi(optarg));
+             break;
+          case 't': //Task period in ms
+             printf("Period: %d\n", atoi(optarg));
+             break;
+          case 't': //Task period in ms
+             printf("Period: %d\n", atoi(optarg));
+             break;
+          case 't': //Task period in ms
+             printf("Period: %d\n", atoi(optarg));
+             break;
+          case 't': //Task period in ms
+             printf("Period: %d\n", atoi(optarg));
+             break;
+          case ':':
+             printf("Option needs a value\n");
+             exit(-1);
+             break;
+          case '?': //used for some unknown options
+             printf("unknown option: %c\n", optopt);
+             usage();
+             break;
+       }
+    }
+    for(; optind < argc; optind++){ //when some extra arguments are passed
+       printf("Given extra arguments: %s\n", argv[optind]);
+    }
     // Lock memory
     if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
         printf("mlockall failed: %m\n");
@@ -245,7 +284,6 @@ int main(int argc, char* argv[]) {
         printf("pthread setschedpolicy failed\n");
         goto out;
     }
-    param.sched_priority = 90;
     ret = pthread_attr_setschedparam(&attr, &param);
     if (ret) {
         printf("pthread setschedparam failed\n");
@@ -275,4 +313,3 @@ int main(int argc, char* argv[]) {
 out:
     return ret;
 }
-
