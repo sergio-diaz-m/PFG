@@ -102,48 +102,48 @@ void* cyclicTask(void* arg) {
           data[i] = 'A';
       }
 
+
     // Main loop
     while (1) {
     	char buffer[4096]; //quitar?
-    	static char ctrl[1024 /* overprovision*/];
-        struct msghdr msg_tx,msg_rx;
-        struct iovec entry;
-        struct iovec iov_rx;
-        struct timespec rx_time,tx_time,rx_timestamp, tx_timestamp;
-        struct timespec lat_ts, lat_time;
-        struct cmsghdr *cmsg;
-        struct cmsghdr *cmsg_rx;
+		static char ctrl[1024 /* overprovision*/];
+		struct msghdr msg_tx,msg_rx;
+		struct iovec entry;
+		struct iovec iov_rx;
+		struct timespec rx_time,tx_time,rx_timestamp, tx_timestamp;
+		struct timespec lat_ts, lat_time;
+		struct cmsghdr *cmsg;
+		struct cmsghdr *cmsg_rx;
 
-        // Message structure
-        memset(&msg_tx, 0, sizeof(msg_tx));
+		// Message structure
+		memset(&msg_tx, 0, sizeof(msg_tx));
 
-    	entry.iov_base = data;
-    	entry.iov_len = sizeof(data);
+		entry.iov_base = data;
+		entry.iov_len = sizeof(data);
 
-        msg_tx.msg_name = NULL; //address
-        msg_tx.msg_namelen = 0;//address size
-        msg_tx.msg_iov = &entry; //io vector array
-        msg_tx.msg_iovlen = 1; //iov length
-        msg_tx.msg_control = ctrl; //ancillary data
-        msg_tx.msg_controllen = sizeof(ctrl); //ancillary data lenght
+		msg_tx.msg_name = NULL; //address
+		msg_tx.msg_namelen = 0;//address size
+		msg_tx.msg_iov = &entry; //io vector array
+		msg_tx.msg_iovlen = 1; //iov length
+		msg_tx.msg_control = ctrl; //ancillary data
+		msg_tx.msg_controllen = sizeof(ctrl); //ancillary data lenght
 
-        memset(&msg_rx, 0, sizeof(msg_rx));
-        msg_rx.msg_name = &dir; //address
-        msg_rx.msg_namelen = sizeof(dir);//address size
-        msg_rx.msg_iov = &iov_rx; //io vector array
-        msg_rx.msg_iovlen = 1; //iov length
-        msg_rx.msg_control = buffer; //ancillary data
-        msg_rx.msg_controllen = sizeof(buffer); //ancillary data lenght
-
+		memset(&msg_rx, 0, sizeof(msg_rx));
+		msg_rx.msg_name = &dir; //address
+		msg_rx.msg_namelen = sizeof(dir);//address size
+		msg_rx.msg_iov = &iov_rx; //io vector array
+		msg_rx.msg_iovlen = 1; //iov length
+		msg_rx.msg_control = buffer; //ancillary data
+		msg_rx.msg_controllen = sizeof(buffer); //ancillary data lenght
 
         // Send 200 bytes
-        clock_gettime(CLOCK_MONOTONIC,&tx_time); //Get tx time in application space
+        clock_gettime(CLOCK_BOOTTIME ,&tx_time); //Get tx time in application space
     	if (sendto(sd, (const char *)data, sizeof(data), 0, (struct sockaddr*)&dir, sizeof(dir))<0){
-           printf("Unable to send message\n");
+           perror("sendto");
     	}
     	//Recive message with rx timestamp
     	recvmsg(sd, &msg_rx, 0);
-    	clock_gettime(CLOCK_MONOTONIC,&rx_time); //Get rx time in application space
+    	clock_gettime(CLOCK_BOOTTIME ,&rx_time); //Get rx time in application space
     	//Recieve tx timestamp through MSG_ERRQUEUE
         int ret = recvmsg(sd, &msg_tx, MSG_ERRQUEUE);
         if (ret == -1) {
@@ -178,12 +178,12 @@ void* cyclicTask(void* arg) {
         //printf("TX_ts %ld.%ld\n",tx_timestamp.tv_sec,tx_timestamp.tv_nsec);
         //printf("RX_ts %ld.%ld\n",rx_timestamp.tv_sec,rx_timestamp.tv_nsec);
 
-        printf("(PID: %d): Lat:%lu us. %lu\n", tid,lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
+        printf("(PID: %d): Lat:%lu us. %lu\r", tid,lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
         fprintf(file, "%lu %lu\n",lat_ts.tv_nsec/1000,lat_time.tv_nsec/1000);
         fflush(file);
 
         //Sleep
-        wait_rest_of_period(&pinfo);
+        //wait_rest_of_period(&pinfo);
     }
     fclose(file);
     return NULL;
