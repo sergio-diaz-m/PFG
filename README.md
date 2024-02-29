@@ -15,7 +15,7 @@ Where each parameter represents:
 - `-t` Send task period in ms (Default: 1ms)
 - `-f` [filename] output text file name (Default: output.txt)
 - `-d` Debug mode: (optional)
-	- `0` None.
+	- `0` None (default).
 	- `1` Print PID, latency.
  	- `2` Print PID, latency + SO_TIMESTAMPS.
   	- `3` Print PID, latency + SO_TIMESTAMPS + send & recieve information.
