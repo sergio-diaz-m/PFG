@@ -20,6 +20,7 @@
 #include <linux/net_tstamp.h>
 #include <linux/errqueue.h>
 #include <errno.h>
+#include <signal.h>
 
 #define PERIOD_NS 1000000 //1ms
 
@@ -36,6 +37,16 @@ struct period_info {
         struct timespec next_period;
         long period_ns;
 };
+// Signal Handlers
+// Global variable to indicate whether the program should exit
+volatile sig_atomic_t exit_flag = 0;
+void signal_handler(int signum) {
+    if (signum == SIGINT) {
+        // Handle Ctrl+C
+        printf("Ctrl+C detected\n");
+        exit_flag = 1;
+    }
+}
 static void periodic_task_init(struct period_info *pinfo)
 {
         clock_gettime(CLOCK_REALTIME, &(pinfo->next_period));
@@ -59,14 +70,14 @@ static void wait_rest_of_period(struct period_info *pinfo)
 }
 
 static void usage(void){
-	printf("\nrttUDP v1.0 round-trip time UDP tester.\n"
-		"Test output file: output.txt\n"
-		"Usage: rttUDP -i-p -P -n -t -d [option]*\n"
-		"-i: Destination address (Default: 192.168.250.20)\n"
-		"-p: Destination port (Default: 350000)\n"
+	printf("\nrttUDP v1.1 round-trip time UDP tester.\n"
+		"Usage: rttUDP -i [IP] -p [port] -P -n -t -f [filename] -d [option]*\n"
+		"-i: [ip] Destination address (Default: 192.168.250.20)\n"
+		"-p: [port] Destination port (Default: 350000)\n"
 		"-P: Task priority (Real-time: 80+)\n"
 		"-n: Number of packages to send (0 for unlimited)\n"
 		"-t: Send task period in ms (0 no sleep time)\n"
+		"-f: [filename] output text file name (default output.txt)"
 		"-d: Debug mode (optional)\n"
 		"	0: None\n"
 		"	1: Print PID, latency\n"
@@ -84,8 +95,9 @@ static void usage(void){
 
 struct arg_data{
     char* ip;
+    char*filename;
     int port;
-    int num_pkg;
+    uint num_pkg;
     int period;
     int dbg_mode;
     char* option;
@@ -109,6 +121,9 @@ void* cyclicTask(void* arg) {
 	printf("Send rate: %d ms\n", args->period);
 	printf("Debug mode: %d\n", args->dbg_mode);
 	printf("Option: %s\n", args->option);
+	args->filename=strcat(args->filename,".txt");
+	printf("Output file name: %s\n", args->filename);
+
 	if (strcmp(args->option,"SO_TS")==0){
 		opt_flag=1;
 	}
@@ -130,7 +145,7 @@ void* cyclicTask(void* arg) {
     //Get PID
 	pid_t tid = getpid();
 	//Open file
-    FILE *file = fopen("output.txt", "w");
+    FILE *file = fopen(args->filename, "w");
     if (file == NULL) {
         perror("Error opening file");
         exit(EXIT_FAILURE);
@@ -160,7 +175,8 @@ void* cyclicTask(void* arg) {
     }
     int on =1;
     setsockopt(sd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
-
+    if (setsockopt(sd, SOL_SOCKET, SO_DONTROUTE, &on, sizeof(on))<0)
+        perror("setsocketopt");
     //Prepare 200 bytes data to be sent
     char data[200];
     for (int i = 0; i < 200; i++) {
@@ -170,7 +186,7 @@ void* cyclicTask(void* arg) {
 
     // Main loop
     int sent_pkgs=0;
-    while (args->num_pkg==-1 || sent_pkgs<args->num_pkg) {
+    while ((args->num_pkg==-1 || sent_pkgs<args->num_pkg)&& !exit_flag) {
     	char buffer[4096]; //quitar?
 		static char ctrl[1024 /* overprovision*/];
 		struct msghdr msg_tx,msg_rx;
@@ -205,14 +221,14 @@ void* cyclicTask(void* arg) {
         // Send 200 bytes
 		if(opt_flag>=2)
 			clock_gettime(CLOCK_BOOTTIME ,&tx_time); //Get tx time in application space
-    	if (sendto(sd, (const char *)data, sizeof(data), 0, (struct sockaddr*)&dir, sizeof(dir))<0){
+    	if (sendto(sd, (const char *)data, sizeof(data), MSG_DONTROUTE , (struct sockaddr*)&dir, sizeof(dir))<0){
            perror("sendto");
     	}
     	if(args->dbg_mode==3){
     		printf("\nSent 200 bytes\n");
     	}
     	//Recive message with rx timestamp
-    	recvmsg(sd, &msg_rx, MSG_DONTROUTE|MSG_NOSIGNAL|MSG_ZEROCOPY);
+    	recvmsg(sd, &msg_rx, 0);
     	if(opt_flag>=2)
     		clock_gettime(CLOCK_BOOTTIME ,&rx_time); //Get rx time in application space
     	//Recieve tx timestamp through MSG_ERRQUEUE
@@ -222,7 +238,7 @@ void* cyclicTask(void* arg) {
                 break;
         }
     	if(args->dbg_mode==3){
-    		printf("Recieved 200 bytes\n\n");
+    		printf("Reply recieved\n\n");
     	}
         // Timespamp acquisition from kernel space
         // Extract the timestamps from ancillary data using iterator macros
@@ -244,6 +260,7 @@ void* cyclicTask(void* arg) {
               }
           }
     	}
+
          if(opt_flag==1||opt_flag==3)
         	 lat_ts=timespec_sub(&rx_timestamp,&tx_timestamp); //SO_TIMESTAMPING latency
          if(opt_flag>=2)
@@ -266,10 +283,11 @@ void* cyclicTask(void* arg) {
         //Sleep
         wait_rest_of_period(&pinfo);
     }
-    printf("Finished. Sent: %d messages\n",args->num_pkg);
     fclose(file);
+    close(sd);
+    printf("Finished.\n");
+    pthread_exit(NULL);
     return NULL;
-
 }
 
 int main(int argc, char* argv[]) {
@@ -278,8 +296,13 @@ int main(int argc, char* argv[]) {
     pthread_t cyclic_thread;
     int ret;
     struct arg_data th_args;
-    th_args.ip="192.168.250.20"; //default for GAMESA Proteus PV GP613607PV
-    th_args.port=35000; //default
+    //Default args
+    th_args.ip="192.168.250.20"; //IP GAMESA Proteus PV GP613607PV
+    th_args.port=35000;
+    th_args.filename="output";
+    th_args.period=10;
+    th_args.num_pkg=-1;
+    th_args.option="ALL";
 
     //Parse arguemnts
     int option;
@@ -288,7 +311,7 @@ int main(int argc, char* argv[]) {
     	exit(-1);
     }
     // put ':' at the starting of the string so compiler can distinguish between '?' and ':'
-    while((option = getopt(argc, argv, ":i:p:P:n:t:hvd:")) != -1){ //get option from the getopt() method
+    while((option = getopt(argc, argv, ":i:p:P:n:t:hf:d:")) != -1){ //get option from the getopt() method
        switch(option){
           case 'h':
         	 usage();
@@ -308,6 +331,9 @@ int main(int argc, char* argv[]) {
 			  break;
 		   case 't': //Task period in ms
 			  th_args.period=atoi(optarg);
+			  break;
+		   case 'f': //Filename
+			  th_args.filename=(optarg);
 			  break;
 		   case 'd': //Debug mdoe
 			  th_args.dbg_mode=atoi(optarg);
@@ -330,7 +356,11 @@ int main(int argc, char* argv[]) {
         printf("mlockall failed: %m\n");
         exit(-2);
     }
-
+    // Set up CTRL+C signal handlet to terminate the program
+    if (signal(SIGINT, signal_handler) == SIG_ERR) {
+        perror("Failed to set up signal handler");
+        return -1;
+    }
     // Initialize pthread attributes (default values)
     ret = pthread_attr_init(&attr);
     if (ret) {
