@@ -20,7 +20,7 @@ Where each parameter represents:
   	2: Print PID, latency + SO_TIMESTAMPS.
   	3: Print PID, latency + SO_TIMESTAMPS + send & recieve information.
 -`[OPTIONS]`
--- SO_TIMESTAMPING - request kernel space software time stamps to calculate latency.
--- CLOCK_GETTIME - request user space time stamps using clock_gettime() to calculate latency.
--- ALL - request both time stamp reporting methods and calculate latency.
+ - `SO_TIMESTAMPING` request kernel space software time stamps to calculate latency.
+ - 'CLOCK_GETTIME` request user space time stamps using clock_gettime() to calculate latency.
+ - `ALL` request both time stamp reporting methods and calculate latency.
       
