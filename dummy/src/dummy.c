@@ -4,7 +4,7 @@
  *  Created on: May 13, 2024
  *      Author: Sergio Diaz
  */
-
+#include <sys/resource.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -24,7 +24,7 @@
 
 #include <errno.h>
 
-#define PERIOD_NS 1000000
+#define PERIOD_NS 1000000000
 
 struct period_info {
         struct timespec next_period;
@@ -65,7 +65,7 @@ void* cyclicTask(void* arg) {
     // Main loop
     while (1) {
     	clock_gettime(CLOCK_MONOTONIC,&time);
-    	printf("Time: %ld.%ld",time.tv_sec,time.tv_nsec);
+    	printf("Time: %ld.%ld\n",time.tv_sec,time.tv_nsec);
         //Sleep
         wait_rest_of_period(&pinfo);
     }
@@ -107,6 +107,8 @@ int main(int argc, char* argv[]) {
         goto out;
     }
     param.sched_priority = 90;
+    setpriority(PRIO_PROCESS, 0, 90);
+
     ret = pthread_attr_setschedparam(&attr, &param);
     if (ret) {
         printf("pthread setschedparam failed\n");
