@@ -74,7 +74,7 @@ static void usage(void){
 		"Usage: rttUDP -i [IP] -p [port] -P -n -t -f [filename] -d [option]*\n"
 		"-i: [ip] Destination address (Default: 192.168.250.20)\n"
 		"-p: [port] Destination port (Default: 350000)\n"
-		"-P: Task priority (Real-time: 80+)\n"
+		"-P: Thread priority (Real-time: 80+)\n"
 		"-n: Number of packages to send (-1 for unlimited)\n"
 		"-t: Send task period in ms (0 no sleep time)\n"
 		"-f: [filename] output text file name (default output.txt)"
