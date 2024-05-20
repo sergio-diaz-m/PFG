@@ -23,4 +23,5 @@ Where each parameter represents:
 	- `SO_TS` request kernel space software time stamps to calculate latency (SO_TIMESTAMPING). visit [The Linux Kernel documentation](https://www.kernel.org/doc/html/next/networking/timestamping.html) for detailed information about this socket option.
 	- `CLOCK_GETTIME` request user space time stamps using clock_gettime() to calculate latency.
 	- `ALL` request both time stamp reporting methods and calculate latency.
+ 	- `BIN` (preferred) requests kernel space timestampin to be written into a binary file (default output.bin).
       
