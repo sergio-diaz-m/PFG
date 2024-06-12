@@ -134,7 +134,7 @@ void* cyclicTask(void* arg) {
     //Get PID
 	pid_t tid = getpid();
 	//Open file
-	FILE *file;
+	FILE *file,*period_file;
 	if(opt_flag==4){
 		args->filename=strcat(args->filename,".bin");
 		file = fopen(args->filename,"wb");
@@ -147,7 +147,7 @@ void* cyclicTask(void* arg) {
         perror("Error opening file");
         exit(EXIT_FAILURE);
     }
-
+    period_file = fopen("period.txt", "w");
     //Setup socket
     int sd;
     sd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -197,39 +197,45 @@ void* cyclicTask(void* arg) {
 	printf("Output file name: %s\n", args->filename);
 
     int sent_pkgs=0;
+
+	struct timespec rx_time,tx_time,rx_timestamp, tx_timestamp,period_previous,period_current;
+	struct timespec lat_ts, lat_time, period_dif;
+
+
+	char buffer[4096]; //quitar?
+	static char ctrl[1024 /* overprovision*/];
+	struct msghdr msg_tx,msg_rx;
+	struct iovec entry;
+	struct iovec iov_rx;
+
+	struct cmsghdr *cmsg;
+	struct cmsghdr *cmsg_rx;
+
+	// Message structure
+	memset(&msg_tx, 0, sizeof(msg_tx));
+
+	entry.iov_base = data;
+	entry.iov_len = sizeof(data);
+
+	msg_tx.msg_name = NULL; //address
+	msg_tx.msg_namelen = 0;//address size
+	msg_tx.msg_iov = &entry; //io vector array
+	msg_tx.msg_iovlen = 1; //iov length
+	msg_tx.msg_control = ctrl; //ancillary data
+	msg_tx.msg_controllen = sizeof(ctrl); //ancillary data lenght
+
+	memset(&msg_rx, 0, sizeof(msg_rx));
+	msg_rx.msg_name = &dir; //address
+	msg_rx.msg_namelen = sizeof(dir);//address size
+	msg_rx.msg_iov = &iov_rx; //io vector array
+	msg_rx.msg_iovlen = 1; //iov length
+	msg_rx.msg_control = buffer; //ancillary data
+	msg_rx.msg_controllen = sizeof(buffer); //ancillary data lenght
+
+	clock_gettime(CLOCK_BOOTTIME ,&period_previous);
     usleep(2000000);
     // Main loop
     while ((args->num_pkg==-1 || sent_pkgs<args->num_pkg)&& !exit_flag) {
-    	char buffer[4096]; //quitar?
-		static char ctrl[1024 /* overprovision*/];
-		struct msghdr msg_tx,msg_rx;
-		struct iovec entry;
-		struct iovec iov_rx;
-		struct timespec rx_time,tx_time,rx_timestamp, tx_timestamp;
-		struct timespec lat_ts, lat_time;
-		struct cmsghdr *cmsg;
-		struct cmsghdr *cmsg_rx;
-
-		// Message structure
-		memset(&msg_tx, 0, sizeof(msg_tx));
-
-		entry.iov_base = data;
-		entry.iov_len = sizeof(data);
-
-		msg_tx.msg_name = NULL; //address
-		msg_tx.msg_namelen = 0;//address size
-		msg_tx.msg_iov = &entry; //io vector array
-		msg_tx.msg_iovlen = 1; //iov length
-		msg_tx.msg_control = ctrl; //ancillary data
-		msg_tx.msg_controllen = sizeof(ctrl); //ancillary data lenght
-
-		memset(&msg_rx, 0, sizeof(msg_rx));
-		msg_rx.msg_name = &dir; //address
-		msg_rx.msg_namelen = sizeof(dir);//address size
-		msg_rx.msg_iov = &iov_rx; //io vector array
-		msg_rx.msg_iovlen = 1; //iov length
-		msg_rx.msg_control = buffer; //ancillary data
-		msg_rx.msg_controllen = sizeof(buffer); //ancillary data lenght
 
         // Send 200 bytes
 		if(opt_flag>=2)
@@ -299,10 +305,16 @@ void* cyclicTask(void* arg) {
         if(args->num_pkg!=-1){
         	sent_pkgs++;
         }
+
         //Sleep
         wait_rest_of_period(&pinfo);
+        clock_gettime(CLOCK_BOOTTIME ,&period_current);
+        period_dif=timespec_sub(&period_current,&period_previous);
+        fprintf(period_file, "%lu\n",period_dif.tv_nsec);
+        period_previous=period_current;
     }
     fclose(file);
+    fclose(period_file);
     close(sd);
     printf("Finished.\n");
     pthread_exit(NULL);
